@@ -66,8 +66,9 @@ assign_bootstrap_ids_m <- function(
   if (max_sample_size <= 0 || max_sample_size > n) {
     stop("max_sample_size must be > 0 and <= number of rows.")
   }
-  
+
   # Step 2: Split indices by block and class ----
+  # group_indices is a list of row numbers, one element per block x class
   block_vec <- data[[block_column]]
   class_vec <- data[[class_column]]
   if (is.factor(block_vec)) block_vec <- droplevels(block_vec)
@@ -78,26 +79,30 @@ assign_bootstrap_ids_m <- function(
     list(block = block_vec, class = class_vec),
     drop = TRUE
   )
-  
+
   group_sizes <- vapply(group_indices, length, integer(1))
   total_group_size <- sum(group_sizes)
-  
+
   # Step 3: Calculate dynamic proportion ----
+  # prop = 1 when max_sample_size equals the number of rows
   prop <- min(1, max_sample_size / total_group_size)
-  
+
   # Step 4: Determine sample sizes ----
+  # Rows to draw from each group (at least 1)
   sample_sizes <- pmax(1, floor(group_sizes * prop))
   total_sample_size <- sum(sample_sizes)
-  
+
   # Step 5: Allocate result matrix ----
+  # One row per sampled position, one column per replicate
   idx_mat <- matrix(
     NA_integer_,
     nrow = total_sample_size,
     ncol = num_boot
   )
   colnames(idx_mat) <- paste0("boot_", seq_len(num_boot))
-  
+
   # Step 6: Define sampler for one replicate ----
+  # Resample row numbers within each group, then concatenate the groups
   sample_one <- function() {
     unlist(
       mapply(function(ix, m) {
@@ -110,7 +115,7 @@ assign_bootstrap_ids_m <- function(
       use.names = FALSE
     )
   }
-  
+
   # Step 7: Generate all replicates ----
   if (progress) {
     pb <- utils::txtProgressBar(min = 0,
@@ -122,6 +127,6 @@ assign_bootstrap_ids_m <- function(
     if (progress) utils::setTxtProgressBar(pb, b)
   }
   if (progress) close(pb)
-  
+
   return(idx_mat)
 }

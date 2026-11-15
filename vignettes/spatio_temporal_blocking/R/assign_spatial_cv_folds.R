@@ -45,6 +45,7 @@ choose_folds_min_detections <- function(
     stop("min_detections must be >= 1.")
   }
 
+  # Detections per block
   det_counts <- data %>%
     dplyr::filter(.data[[class_column]] == 1) %>%
     dplyr::count(
@@ -57,9 +58,13 @@ choose_folds_min_detections <- function(
     stop("No detections found to allocate across folds.")
   }
 
+  # No point testing more folds than the largest block has detections
   fold_cap <- min(max_folds, max(det_counts$n_detect))
   best <- NA_integer_
 
+  # Detections each fold would receive with k folds, mirroring how
+  # assign_spatial_cv_folds() deals fold IDs within each block: a block
+  # with c detections gives floor((c - f) / k) + 1 to fold f if c >= f
   check_folds <- function(k) {
     counts <- det_counts$n_detect
     vapply(
@@ -76,6 +81,8 @@ choose_folds_min_detections <- function(
     )
   }
 
+  # Try fold counts from the cap downward; keep the first k where
+  # every fold meets the detection minimum
   for (k in seq(
     from = fold_cap,
     to = min_folds,
@@ -88,6 +95,7 @@ choose_folds_min_detections <- function(
     }
   }
 
+  # Fall back to a single fold if no k >= min_folds works
   if (is.na(best)) {
     per_fold <- sum(det_counts$n_detect)
     if (per_fold >= min_detections) {
@@ -150,6 +158,7 @@ assign_spatial_cv_folds <- function(
     n_folds
 ) {
   data %>%
+    # One group per block x class
     dplyr::group_by(
       !!sym(block_column),
       !!sym(class_column)
@@ -158,6 +167,8 @@ assign_spatial_cv_folds <- function(
     purrr::map_dfr(
       ~{
         n <- nrow(.x)
+        # Repeat 1..n_folds to the group's length, then shuffle. Groups
+        # smaller than n_folds only receive the lowest fold IDs.
         fold_ids <- sample(
           rep(seq_len(n_folds), length.out = n)
         )

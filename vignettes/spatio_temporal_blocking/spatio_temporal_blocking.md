@@ -62,23 +62,29 @@ The method needs presence–absence survey data with one row per location–visi
 We simulate 10,000 presence–absence survey locations distributed randomly within the Alberta boundary between 2000 and 2024. Detection probability increases toward the south-east so that some blocks have many detections and others have none.
 
 ```r
-library(dplyr)
-library(purrr)
-library(ggplot2)
-library(sf)
-library(dggridR)
-library(rnaturalearth)
-library(MetBrewer)
+library(dplyr)          # data manipulation
+library(purrr)          # iteration (map_dfr, map_dbl)
+library(ggplot2)        # block maps
+library(sf)             # spatial vector data
+library(dggridR)        # global hexagonal grid
+library(rnaturalearth)  # provincial boundaries
+library(MetBrewer)      # map colour palette
 library(utilR) # theme_science_map()
 
+# Alberta boundary (WGS84), used to place the simulated survey locations
 alberta <- ne_states(country = "Canada", returnclass = "sf") %>%
   filter(name_en == "Alberta")
 
 set.seed(42)
 n <- 10000
+
+# Draw n random points inside Alberta and extract their coordinates
 locations <- st_sample(alberta, size = n) %>%
   st_coordinates()
 
+# One row per survey: location, a random survey year, and a 0/1 detection.
+# Detection probability increases toward the south (lower latitude) and
+# east (higher longitude), so detections cluster in some blocks.
 data <- tibble(
   longitude = locations[, "X"],
   latitude  = locations[, "Y"],
@@ -87,7 +93,7 @@ data <- tibble(
   mutate(
     p_det    = plogis(-3.5 + 0.35 * (60 - latitude) / 2 +
                         0.2 * (longitude + 120) / 2),
-    presence = rbinom(n, 1, p_det)
+    presence = rbinom(n, 1, p_det)  # 1 = detected, 0 = not detected
   ) %>%
   select(-p_det)
 ```
@@ -99,6 +105,8 @@ data <- tibble(
 Spatial blocks come from a global discrete grid of hexagons rather than a projected rectangular grid, so cells have approximately equal area across large extents. `dgconstruct()` picks the grid resolution whose cell-centre spacing is closest to the requested 150 km, and `dgGEO_to_SEQNUM()` returns the ID of the cell that contains each location. Temporal blocks bin survey years at the 20th, 40th, 60th, and 80th percentiles, so each bin holds roughly one fifth of the observations rather than one fifth of the years. The spatio-temporal block is the observed combination of the two, renumbered `block_1`, `block_2`, and so on.
 
 ```r
+# Global hexagonal grid; dggridR picks the resolution whose cell-centre
+# spacing is closest to 150 km
 grid <- dgconstruct(
   spacing = 150,
   metric = TRUE
@@ -113,6 +121,7 @@ data <- data %>%
       latitude
     )$seqnum,
     # Create quantile-based temporal blocks
+    # (breaks at the 20th, 40th, 60th, and 80th percentiles of year)
     temporal_block = cut(
       year,
       breaks = quantile(
@@ -124,6 +133,7 @@ data <- data %>%
       right = FALSE
     ),
     # Combine spatial and temporal blocks
+    # (one level per observed cell x year-bin combination)
     spatio_temporal_block = interaction(
       droplevels(as.factor(spatial_block)),
       droplevels(as.factor(temporal_block)),
@@ -131,6 +141,7 @@ data <- data %>%
       drop = TRUE
     )
   ) %>%
+  # Replace the long "cell::bin" labels with short IDs (block_1, block_2, ...)
   group_by(spatio_temporal_block) %>%
   mutate(
     spatio_temporal_block = paste0(
@@ -139,6 +150,7 @@ data <- data %>%
   ) %>%
   ungroup()
 
+# Check: number of observations, detections, and blocks
 data %>%
   summarise(
     n_obs = n(),
@@ -147,6 +159,7 @@ data %>%
     n_spatio_temporal_blocks = n_distinct(spatio_temporal_block)
   ) %>%
   print()
+# Check: observations per year bin
 print(table(data$temporal_block))
 ```
 
@@ -169,17 +182,21 @@ To check the blocks, we convert the occupied cells to polygons and map the numbe
 ```r
 dir.create("figures", showWarnings = FALSE)
 
+# Project the boundary to Canada Atlas Lambert (EPSG:3978) for mapping
 alberta_lcc <- st_transform(alberta, crs = 3978)
 
+# Convert the occupied grid cells to polygons and project them
 block_cells <- dgcellstogrid(grid, cells = unique(data$spatial_block)) %>%
   st_as_sf() %>%
   mutate(seqnum = as.integer(seqnum)) %>%
   st_transform(crs = 3978)
 
+# Locations per spatial block
 spatial_counts <- block_cells %>%
   left_join(count(data, spatial_block, name = "n_obs"),
             by = c("seqnum" = "spatial_block"))
 
+# Figure 1: spatial blocks
 p1 <- ggplot(spatial_counts) +
   geom_sf(aes(fill = n_obs), colour = "white", linewidth = 0.3) +
   geom_sf(data = alberta_lcc, fill = NA, colour = "black", linewidth = 0.5) +
@@ -188,10 +205,13 @@ p1 <- ggplot(spatial_counts) +
   theme_science_map()
 ggsave("figures/spatial_blocks.png", p1, width = 6, height = 6, dpi = 150)
 
+# Locations per spatial block within each year bin (one row per
+# spatio-temporal block)
 st_counts <- block_cells %>%
   inner_join(count(data, spatial_block, temporal_block, name = "n_obs"),
              by = c("seqnum" = "spatial_block"))
 
+# Figure 2: spatio-temporal blocks, one panel per year bin
 p2 <- ggplot(st_counts) +
   geom_sf(aes(fill = n_obs), colour = "white", linewidth = 0.2) +
   geom_sf(data = alberta_lcc, fill = NA, colour = "black", linewidth = 0.4) +
@@ -226,25 +246,30 @@ Function definition:
 
 ```r
 stratified_split <- function(
-    data, 
-    block_column, 
-    class_column, 
+    data,
+    block_column,
+    class_column,
     train_frac
 ) {
   data %>%
+    # One group per block x class (e.g. detections in block_10)
     group_by(
-      !!sym(block_column), 
+      !!sym(block_column),
       !!sym(class_column)
     ) %>%
     group_split() %>%
+    # Split each group separately, then bind the groups back together
     map_dfr(~ {
       n <- nrow(.x)
+      # Rows to send to training; rounding means groups of 1-2 rows
+      # always go entirely to training
       train_size <- round(train_frac * n)
       .x %>%
         mutate(
+          # Randomly pick train_size rows for training; the rest are test
           split = ifelse(
-            row_number() %in% sample(1:n, train_size), 
-            "train", 
+            row_number() %in% sample(1:n, train_size),
+            "train",
             "test"
           )
         )
@@ -255,15 +280,19 @@ stratified_split <- function(
 Applied to the simulated data:
 
 ```r
+# Split 75/25 within each block x class group
 split_data <- stratified_split(
   data = data,
   block_column = "spatio_temporal_block",
   class_column = "presence",
   train_frac = 0.75
 )
+# Check: rows per block, class, and split
 count(split_data, spatio_temporal_block, presence, split)
+# Check: overall split by class
 table(split_data$split, split_data$presence)
 
+# Keep the training rows for fold assignment and bootstrapping
 train_data <- split_data %>% filter(split == "train") %>% select(-split)
 ```
 
@@ -314,6 +343,7 @@ choose_folds_min_detections <- function(
     stop("min_detections must be >= 1.")
   }
 
+  # Detections per block
   det_counts <- data %>%
     dplyr::filter(.data[[class_column]] == 1) %>%
     dplyr::count(
@@ -326,9 +356,13 @@ choose_folds_min_detections <- function(
     stop("No detections found to allocate across folds.")
   }
 
+  # No point testing more folds than the largest block has detections
   fold_cap <- min(max_folds, max(det_counts$n_detect))
   best <- NA_integer_
 
+  # Detections each fold would receive with k folds, mirroring how
+  # assign_spatial_cv_folds() deals fold IDs within each block: a block
+  # with c detections gives floor((c - f) / k) + 1 to fold f if c >= f
   check_folds <- function(k) {
     counts <- det_counts$n_detect
     vapply(
@@ -345,6 +379,8 @@ choose_folds_min_detections <- function(
     )
   }
 
+  # Try fold counts from the cap downward; keep the first k where
+  # every fold meets the detection minimum
   for (k in seq(
     from = fold_cap,
     to = min_folds,
@@ -357,6 +393,7 @@ choose_folds_min_detections <- function(
     }
   }
 
+  # Fall back to a single fold if no k >= min_folds works
   if (is.na(best)) {
     per_fold <- sum(det_counts$n_detect)
     if (per_fold >= min_detections) {
@@ -382,6 +419,7 @@ assign_spatial_cv_folds <- function(
     n_folds
 ) {
   data %>%
+    # One group per block x class
     dplyr::group_by(
       !!sym(block_column),
       !!sym(class_column)
@@ -390,6 +428,8 @@ assign_spatial_cv_folds <- function(
     purrr::map_dfr(
       ~{
         n <- nrow(.x)
+        # Repeat 1..n_folds to the group's length, then shuffle. Groups
+        # smaller than n_folds only receive the lowest fold IDs.
         fold_ids <- sample(
           rep(seq_len(n_folds), length.out = n)
         )
@@ -403,6 +443,7 @@ assign_spatial_cv_folds <- function(
 Applied to the simulated training data:
 
 ```r
+# Largest fold count (up to 5) giving every fold >= 25 detections
 folds <- choose_folds_min_detections(
   data = train_data,
   block_column = "spatio_temporal_block",
@@ -412,6 +453,7 @@ folds <- choose_folds_min_detections(
 )
 print(folds)
 
+# Add a fold column, assigned within each block x class group
 train_data <- assign_spatial_cv_folds(
   data = train_data,
   block_column = "spatio_temporal_block",
@@ -419,6 +461,7 @@ train_data <- assign_spatial_cv_folds(
   n_folds = folds
 )
 
+# Check: detections, absences, and blocks per fold
 train_data %>%
   group_by(fold) %>%
   summarise(
@@ -429,6 +472,7 @@ train_data %>%
   ) %>%
   print()
 
+# Check: how many folds each block appears in (blocks with >= k rows)
 train_data %>%
   group_by(spatio_temporal_block) %>%
   summarise(n_folds_in_block = n_distinct(fold), n = n(), .groups = "drop") %>%
@@ -495,8 +539,9 @@ assign_bootstrap_ids_m <- function(
   if (max_sample_size <= 0 || max_sample_size > n) {
     stop("max_sample_size must be > 0 and <= number of rows.")
   }
-  
+
   # Step 2: Split indices by block and class ----
+  # group_indices is a list of row numbers, one element per block x class
   block_vec <- data[[block_column]]
   class_vec <- data[[class_column]]
   if (is.factor(block_vec)) block_vec <- droplevels(block_vec)
@@ -507,26 +552,30 @@ assign_bootstrap_ids_m <- function(
     list(block = block_vec, class = class_vec),
     drop = TRUE
   )
-  
+
   group_sizes <- vapply(group_indices, length, integer(1))
   total_group_size <- sum(group_sizes)
-  
+
   # Step 3: Calculate dynamic proportion ----
+  # prop = 1 when max_sample_size equals the number of rows
   prop <- min(1, max_sample_size / total_group_size)
-  
+
   # Step 4: Determine sample sizes ----
+  # Rows to draw from each group (at least 1)
   sample_sizes <- pmax(1, floor(group_sizes * prop))
   total_sample_size <- sum(sample_sizes)
-  
+
   # Step 5: Allocate result matrix ----
+  # One row per sampled position, one column per replicate
   idx_mat <- matrix(
     NA_integer_,
     nrow = total_sample_size,
     ncol = num_boot
   )
   colnames(idx_mat) <- paste0("boot_", seq_len(num_boot))
-  
+
   # Step 6: Define sampler for one replicate ----
+  # Resample row numbers within each group, then concatenate the groups
   sample_one <- function() {
     unlist(
       mapply(function(ix, m) {
@@ -539,7 +588,7 @@ assign_bootstrap_ids_m <- function(
       use.names = FALSE
     )
   }
-  
+
   # Step 7: Generate all replicates ----
   if (progress) {
     pb <- utils::txtProgressBar(min = 0,
@@ -551,7 +600,7 @@ assign_bootstrap_ids_m <- function(
     if (progress) utils::setTxtProgressBar(pb, b)
   }
   if (progress) close(pb)
-  
+
   return(idx_mat)
 }
 ```
@@ -559,6 +608,8 @@ assign_bootstrap_ids_m <- function(
 Applied to the simulated training data:
 
 ```r
+# 50 replicates, each resampling every block x class group to its own
+# size with replacement
 bootstrap_ids <- assign_bootstrap_ids_m(
   data = train_data,
   block_column = "spatio_temporal_block",
@@ -569,9 +620,12 @@ bootstrap_ids <- assign_bootstrap_ids_m(
   replace = TRUE,
   progress = FALSE
 )
+# Check: rows x replicates
 print(dim(bootstrap_ids))
+# Check: share of distinct rows in one replicate (~63% for a bootstrap)
 cat("Unique rows in replicate 1:",
     length(unique(bootstrap_ids[, 1])), "of", nrow(train_data), "\n")
+# Check: replicates differ from each other
 cat("Replicates identical to replicate 1:",
     sum(apply(bootstrap_ids, 2, identical, bootstrap_ids[, 1])), "of 50\n")
 ```
@@ -595,6 +649,8 @@ The fold IDs and bootstrap indices plug into model fitting in two places. Each b
 We use a logistic regression on latitude and longitude to keep the example short. The same loop applies to any model; for boosted regression trees, `dismo::gbm.step()` takes the folds directly through `fold.vector = boot_data$fold`. Folds are assigned before resampling (Step 3), so duplicated rows in a replicate always share a fold and never appear on both sides of a CV split.
 
 ```r
+# AUC from the Mann-Whitney U statistic: the probability that a random
+# detection gets a higher prediction than a random absence
 auc <- function(obs, pred) {
   r <- rank(pred)
   n1 <- sum(obs == 1)
@@ -602,9 +658,12 @@ auc <- function(obs, pred) {
   (sum(r[obs == 1]) - n1 * (n1 + 1) / 2) / (n1 * n0)
 }
 
+# Held-out test set from Step 2
 test_data <- split_data %>% filter(split == "test")
 
+# One model per bootstrap replicate
 boot_results <- map_dfr(seq_len(ncol(bootstrap_ids)), function(b) {
+  # Rows for replicate b (duplicates keep their Step 3 fold)
   boot_data <- train_data[bootstrap_ids[, b], ]
 
   # Block-stratified CV: hold out each fold in turn
@@ -627,6 +686,7 @@ boot_results <- map_dfr(seq_len(ncol(bootstrap_ids)), function(b) {
   )
 })
 
+# Mean and spread of each metric across replicates
 boot_results %>%
   tidyr::pivot_longer(-replicate, names_to = "metric") %>%
   group_by(metric) %>%
