@@ -28,16 +28,61 @@ The blocks stratify the training–test split, the cross-validation (CV) folds, 
 5. Fit one model per bootstrap replicate, using the folds for cross-validation and the test set for evaluation.
 
 ```mermaid
-flowchart TD
-    A[Presence-absence survey locations<br/>lon, lat, year, 0/1] --> B[1. Spatio-temporal blocks<br/>hexagons x year bins]
-    B --> D[2. Training-test split<br/>75/25 by block x class]
-    D --> E[Test set]
-    D --> F[Training set]
-    F --> G[3. CV folds<br/>min detections per fold]
-    F --> H[4. Bootstrap indices<br/>by block x class]
-    G --> I[5. Model fitting<br/>CV within each replicate]
-    H --> I
-    E --> I
+%%{init: {"theme": "base", "themeVariables": {"fontFamily": "Montserrat, Arial, sans-serif", "fontSize": "14px", "primaryColor": "#FFFFFF", "primaryTextColor": "#2D415B", "primaryBorderColor": "#2D415B", "lineColor": "#2D415B", "clusterBkg": "#EFF1F0", "clusterBorder": "#EFF1F0", "titleColor": "#2D415B", "edgeLabelBackground": "#FFFFFF"}}}%%
+flowchart TB
+accTitle: Spatio-temporal stratification workflow
+accDescr: Survey locations are assigned to spatio-temporal blocks, split into training and test sets within each block and class, given CV folds and bootstrap resamples, and used to fit one model per replicate evaluated by cross-validation and the test set.
+
+%% ----------------------------
+%% Inputs
+%% ----------------------------
+%% src: spatio_temporal_blocking.md, Simulated survey data
+data[("Presence–absence<br/>survey locations")]
+
+%% ----------------------------
+%% Steps
+%% ----------------------------
+%% src: Step 1
+blocks["Assign spatio-temporal<br/>blocks"]
+%% src: Step 2, stratified_split()
+split["Split training and test<br/>within block × class"]
+train([Training set])
+test([Test set])
+%% src: Step 3, choose_folds_min_detections(), assign_spatial_cv_folds()
+folds["Assign CV folds<br/>within block × class"]
+%% src: Step 4, assign_bootstrap_ids_m()
+boot["Draw bootstrap resamples<br/>within block × class"]
+%% src: Step 5
+fit["Fit one model per<br/>bootstrap replicate"]
+
+%% ----------------------------
+%% Outputs
+%% ----------------------------
+final(["Model performance<br/>across replicates"])
+
+%% Flow
+data --> blocks
+blocks --> split
+split --> train
+split --> test
+train --> folds
+train --> boot
+folds --> fit
+boot --> fit
+test --> fit
+fit --> final
+
+%% ----------------------------
+%% Styles (ABMI palette)
+%% ----------------------------
+classDef default fill:#FFFFFF,stroke:#2D415B,stroke-width:1px,color:#2D415B;
+classDef input fill:#AEC0D3,stroke:#2D415B,stroke-width:1px,color:#2D415B;
+classDef output fill:#CFD3C0,stroke:#2D415B,stroke-width:1px,color:#2D415B;
+classDef key_output fill:#E8A396,stroke:#2D415B,stroke-width:2px,color:#2D415B;
+
+class data input
+class train,test output
+class final key_output
 ```
 
 ## Requirements
