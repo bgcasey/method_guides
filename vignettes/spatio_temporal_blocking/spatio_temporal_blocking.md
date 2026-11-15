@@ -25,6 +25,7 @@ The blocks stratify the training–test split, the cross-validation (CV) folds, 
 2. Split the data 75/25 into training and test sets within each block × class group.
 3. Choose the largest number of folds that gives every fold a minimum number of detections, then assign folds within each block × class group.
 4. Draw bootstrap resamples with replacement within each block × class group.
+5. Fit one model per bootstrap replicate, using the folds for cross-validation and the test set for evaluation.
 
 ```mermaid
 flowchart TD
@@ -34,17 +35,27 @@ flowchart TD
     D --> F[Training set]
     F --> G[3. CV folds<br/>min detections per fold]
     F --> H[4. Bootstrap indices<br/>by block x class]
-    G --> I[Model tuning and fitting]
+    G --> I[5. Model fitting<br/>CV within each replicate]
     H --> I
+    E --> I
 ```
 
 ## Requirements
 
-- R with `dplyr`, `purrr`, `dggridR`, `sf`, and `ggplot2`, plus `rnaturalearth` and `rnaturalearthhires` for the Alberta boundary, `MetBrewer` for the map palette, and `utilR` (github.com/bgcasey/utilR) for `theme_science_map()`. The example was run with R 4.5.0, `dggridR` 3.1.0, `dplyr` 1.1.4, `purrr` 1.0.4, `sf` 1.1.2, `ggplot2` 4.0.3, and `MetBrewer` 0.2.0.
-- Three helper files in `R/`: `stratified_split()`, `choose_folds_min_detections()` with `assign_spatial_cv_folds()`, and `assign_bootstrap_ids_m()`.
-- Presence–absence survey data with one row per location–visit and columns for longitude and latitude (WGS84), year, and a 0/1 response. The example simulates these.
+The example was run with R 4.5.0 and the packages below.
 
-The code chunks below run in order from this vignette's folder (`vignettes/spatio_temporal_blocking/`). The complete script is in `example.R`. Each step prints the source of the helper function it uses, so the stratification logic can be read alongside its output. The functions are loaded by the `source()` calls in the setup chunk, so the function listings do not need to be run.
+| Package | Version | Used for |
+|---|---|---|
+| `dplyr`, `purrr`, `tidyr` | 1.1.4, 1.0.4, 1.3.1 | Data manipulation and iteration |
+| `dggridR` | 3.1.0 | Hexagonal grid and spatial block IDs |
+| `sf` | 1.1.2 | Sampling locations, block polygons, and reprojection |
+| `rnaturalearth`, `rnaturalearthhires` | 1.1.0, 1.0.0.9000 | Alberta boundary |
+| `ggplot2`, `MetBrewer` | 4.0.3, 0.2.0 | Block maps |
+| `utilR` | 0.1.0 | `theme_science_map()` for the maps (github.com/bgcasey/utilR) |
+
+`rnaturalearthhires` and `utilR` are not on CRAN. Install them from GitHub (`remotes::install_github("ropensci/rnaturalearthhires")` and `remotes::install_github("bgcasey/utilR")`).
+
+The method needs presence–absence survey data with one row per location–visit and columns for longitude and latitude (WGS84), year, and a 0/1 response. The example simulates these. The code chunks below run in order in a single R session, and the function definitions in each step must be run before the calls that follow them. The maps are written to a `figures/` folder in the working directory. The complete script is in `example.R`.
 
 ### Simulated survey data
 
@@ -59,10 +70,6 @@ library(dggridR)
 library(rnaturalearth)
 library(MetBrewer)
 library(utilR) # theme_science_map()
-
-source("R/stratified_split.R")
-source("R/assign_spatial_cv_folds.R")
-source("R/assign_bootstrap_ids_matrix.R")
 
 alberta <- ne_states(country = "Canada", returnclass = "sf") %>%
   filter(name_en == "Alberta")
@@ -144,6 +151,8 @@ print(table(data$temporal_block))
 ```
 
 ```text
+Resolution: 7, Area (km^2): 23322.6164482894, Spacing (km): 150.830671483152, CLS (km): 172.324490896129
+
 # A tibble: 1 × 4
   n_obs n_detections n_spatial_blocks n_spatio_temporal_blocks
   <int>        <int>            <int>                    <int>
@@ -153,7 +162,7 @@ print(table(data$temporal_block))
        1962        1960        2036        1981        2061 
 ```
 
-The 10,000 locations fall into 40 hexagons and 197 spatio-temporal blocks. Survey years are simulated uniformly, so the quantile breaks fall on 5-year intervals and each bin holds 1,960 to 2,061 locations. With real data, where effort grows over time, the bins narrow in well-surveyed periods.
+`dgconstruct()` selects resolution 7, with cells of about 23,300 km² spaced 150.8 km apart. The 10,000 locations fall into 40 hexagons and 197 spatio-temporal blocks. Survey years are simulated uniformly, so the quantile breaks fall on 5-year intervals and each bin holds 1,960 to 2,061 locations. With real data, where effort grows over time, the bins narrow in well-surveyed periods.
 
 To check the blocks, we convert the occupied cells to polygons and map the number of locations per block (Figures 1 and 2).
 
@@ -213,7 +222,7 @@ Hexagons on the edge of the province hold few locations because only part of eac
 
 `stratified_split()` groups the data by block × class and sends `round(train_frac * n)` randomly chosen rows of each group to training and the rest to test. Every block therefore contributes detections and absences to both sets where group sizes allow.
 
-The function, from `R/stratified_split.R`:
+Function definition:
 
 ```r
 stratified_split <- function(
@@ -252,43 +261,34 @@ split_data <- stratified_split(
   class_column = "presence",
   train_frac = 0.75
 )
-split_data %>%
-  filter(spatio_temporal_block %in% c("block_14", "block_102", "block_171")) %>%
-  group_by(spatio_temporal_block, presence, split) %>%
-  slice_head(n = 1) %>%
-  ungroup() %>%
-  arrange(temporal_block, presence, split) %>%
-  select(spatio_temporal_block, spatial_block, temporal_block, presence, split) %>%
-  print()
-print(table(split = split_data$split, presence = split_data$presence))
+count(split_data, spatio_temporal_block, presence, split)
+table(split_data$split, split_data$presence)
 
 train_data <- split_data %>% filter(split == "train") %>% select(-split)
 ```
 
 ```text
-# A tibble: 12 × 5
-   spatio_temporal_block spatial_block temporal_block presence split
-   <chr>                         <dbl> <fct>             <int> <chr>
- 1 block_14                        959 [2000,2005)           0 test 
- 2 block_14                        959 [2000,2005)           0 train
- 3 block_14                        959 [2000,2005)           1 test 
- 4 block_14                        959 [2000,2005)           1 train
- 5 block_102                      1041 [2010,2015)           0 test 
- 6 block_102                      1041 [2010,2015)           0 train
- 7 block_102                      1041 [2010,2015)           1 test 
- 8 block_102                      1041 [2010,2015)           1 train
- 9 block_171                       959 [2020,2024]           0 test 
-10 block_171                       959 [2020,2024]           0 train
-11 block_171                       959 [2020,2024]           1 test 
-12 block_171                       959 [2020,2024]           1 train
-
-       presence
-split      0    1
+# A tibble: 720 × 4
+   spatio_temporal_block presence split     n
+   <chr>                    <int> <chr> <int>
+ 1 block_1                      0 test      6
+ 2 block_1                      0 train    16
+ 3 block_10                     0 test     16
+ 4 block_10                     0 train    46
+ 5 block_10                     1 train     2
+ 6 block_100                    0 test     11
+ 7 block_100                    0 train    33
+ 8 block_100                    1 test      2
+ 9 block_100                    1 train     4
+10 block_101                    0 test     17
+# ℹ 710 more rows
+       
+           0    1
   test  2164  334
   train 6474 1028
 ```
 
-The split table keeps every input column and adds `split`. The first table shows one row for each combination of presence and split in three example blocks. Every block × class group contributes rows to both the training and test sets. `block_14` and `block_171` share hexagon 959 but fall in different year bins, so they are stratified as separate blocks. Both classes split at close to 75% (1,028 of 1,362 detections and 6,474 of 8,638 absences). Rounding is applied per group, so groups of 1 or 2 rows always go to training. With sparse detections, the realized training fraction for detections rises above the nominal value and single-detection blocks never reach the test set.
+`stratified_split()` keeps every input column and adds `split`. The block-level counts show each block × class group divided at about 3:1 between training and test (`block_100`: 33 and 11 absences, 4 and 2 detections). Both classes split at close to 75% overall (1,028 of 1,362 detections and 6,474 of 8,638 absences). Rounding is applied per group, so groups of 1 or 2 rows always go to training: the 2 detections in `block_10` are both in the training set. With sparse detections, the realized training fraction for detections rises above the nominal value and blocks with one or two detections never reach the test set.
 
 **Decision point.** The training fraction (D3).
 
@@ -298,7 +298,7 @@ The split table keeps every input column and adds `split`. The first table shows
 
 The number of CV folds adapts to the data. `choose_folds_min_detections()` counts detections per block and tests fold counts from `min(max_folds, largest block detection count)` downward. It returns the first `k` at which every fold would receive at least `min_detections` detections, and falls back to 1 if no `k` of 2 or more qualifies. The calculation mirrors how folds are dealt within each block: a block with `c` detections gives `floor((c - f) / k) + 1` detections to fold `f` when `c >= f`, and none otherwise.
 
-The function, from `R/assign_spatial_cv_folds.R`:
+Function definition:
 
 ```r
 choose_folds_min_detections <- function(
@@ -372,7 +372,7 @@ choose_folds_min_detections <- function(
 
 `assign_spatial_cv_folds()` then assigns folds within each block × class group by shuffling the sequence `1, 2, …, k, 1, 2, …` cut to the group's length.
 
-The function, from `R/assign_spatial_cv_folds.R`:
+Function definition:
 
 ```r
 assign_spatial_cv_folds <- function(
@@ -466,7 +466,7 @@ Five folds clear the 25-detection minimum, and 181 of the 186 blocks with at lea
 
 `assign_bootstrap_ids_m()` splits the row indices by block × class and resamples each group, returning a matrix with one column per replicate. Each group is sampled at `floor(group size × prop)` rows (at least 1), where `prop = min(1, max_sample_size / n)`. Setting `max_sample_size = nrow(train_data)` gives `prop = 1`, so each group is resampled to its own size and every replicate keeps the block composition and class balance of the training set. Each column is then used to subset the training data for one model fit, and folds can be reassigned within each replicate as in Step 3.
 
-The function, from `R/assign_bootstrap_ids_matrix.R`:
+Function definition:
 
 ```r
 assign_bootstrap_ids_m <- function(
@@ -588,6 +588,64 @@ Replicate 1 contains 4,847 distinct rows (about 65%), slightly above the 63% exp
 
 **Outputs.** An integer matrix of row indices (rows × replicates).
 
+### Step 5: Use the folds and bootstrap resamples in a model
+
+The fold IDs and bootstrap indices plug into model fitting in two places. Each bootstrap column selects the rows for one model fit. Within that replicate, the `fold` column drives cross-validation: each fold is held out in turn, the model is fitted to the rest, and the held-out rows are scored. The model is then refitted to the whole replicate and scored on the test set. Across replicates, the spread of metrics and coefficients gives the uncertainty.
+
+We use a logistic regression on latitude and longitude to keep the example short. The same loop applies to any model; for boosted regression trees, `dismo::gbm.step()` takes the folds directly through `fold.vector = boot_data$fold`. Folds are assigned before resampling (Step 3), so duplicated rows in a replicate always share a fold and never appear on both sides of a CV split.
+
+```r
+auc <- function(obs, pred) {
+  r <- rank(pred)
+  n1 <- sum(obs == 1)
+  n0 <- sum(obs == 0)
+  (sum(r[obs == 1]) - n1 * (n1 + 1) / 2) / (n1 * n0)
+}
+
+test_data <- split_data %>% filter(split == "test")
+
+boot_results <- map_dfr(seq_len(ncol(bootstrap_ids)), function(b) {
+  boot_data <- train_data[bootstrap_ids[, b], ]
+
+  # Block-stratified CV: hold out each fold in turn
+  cv_auc <- map_dbl(seq_len(folds), function(k) {
+    fit <- glm(presence ~ latitude + longitude, family = binomial,
+               data = filter(boot_data, fold != k))
+    held_out <- filter(boot_data, fold == k)
+    auc(held_out$presence, predict(fit, held_out, type = "response"))
+  })
+
+  # Refit on the full replicate and score on the test set
+  fit <- glm(presence ~ latitude + longitude, family = binomial,
+             data = boot_data)
+  tibble(
+    replicate = b,
+    cv_auc = mean(cv_auc),
+    test_auc = auc(test_data$presence,
+                   predict(fit, test_data, type = "response")),
+    latitude_coef = coef(fit)[["latitude"]]
+  )
+})
+
+boot_results %>%
+  tidyr::pivot_longer(-replicate, names_to = "metric") %>%
+  group_by(metric) %>%
+  summarise(mean = mean(value), sd = sd(value))
+```
+
+```text
+# A tibble: 3 × 3
+  metric          mean       sd
+  <chr>          <dbl>    <dbl>
+1 cv_auc         0.690 0.00291 
+2 latitude_coef -0.174 0.00172 
+3 test_auc       0.676 0.000182
+```
+
+Mean CV AUC (0.690) is slightly higher than test AUC (0.676). Because folds and the test set share blocks, both are within-block estimates, so neither measures transfer to new areas or periods (see Drawbacks and limitations). The negative latitude coefficient recovers the simulated decline in detection probability toward the north. Its small bootstrap standard deviation reflects the large, evenly distributed sample.
+
+**Outputs.** One row per replicate with CV AUC, test AUC, and the latitude coefficient, and their mean and standard deviation.
+
 ## Key decision points
 
 | ID | Decision | Options | Value in example | Rationale | Effect on results |
@@ -612,7 +670,7 @@ Replicate 1 contains 4,847 distinct rows (about 65%), slightly above the 63% exp
 
 | File | Role | Steps |
 |---|---|---|
-| `example.R` | Complete worked example on simulated data, including the figures | All |
+| `example.R` | Complete worked example on simulated data, including the figures and model fitting | All |
 | `R/stratified_split.R` | Training–test split stratified by block × class | 2 |
 | `R/assign_spatial_cv_folds.R` | `choose_folds_min_detections()` and `assign_spatial_cv_folds()` | 3 |
 | `R/assign_bootstrap_ids_matrix.R` | Bootstrap index matrix stratified by block × class | 4 |

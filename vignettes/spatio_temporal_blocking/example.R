@@ -139,15 +139,8 @@ split_data <- stratified_split(
   train_frac = 0.75
 )
 cat("\n== Step 2: split by class ==\n")
-split_data %>%
-  filter(spatio_temporal_block %in% c("block_14", "block_102", "block_171")) %>%
-  group_by(spatio_temporal_block, presence, split) %>%
-  slice_head(n = 1) %>%
-  ungroup() %>%
-  arrange(temporal_block, presence, split) %>%
-  select(spatio_temporal_block, spatial_block, temporal_block, presence, split) %>%
-  print()
-print(table(split = split_data$split, presence = split_data$presence))
+count(split_data, spatio_temporal_block, presence, split)
+table(split_data$split, split_data$presence)
 
 train_data <- split_data %>% filter(split == "train") %>% select(-split)
 
@@ -205,3 +198,42 @@ cat("Unique rows in replicate 1:",
     length(unique(bootstrap_ids[, 1])), "of", nrow(train_data), "\n")
 cat("Replicates identical to replicate 1:",
     sum(apply(bootstrap_ids, 2, identical, bootstrap_ids[, 1])), "of 50\n")
+
+# 5. Use the folds and bootstrap resamples in a model ----
+auc <- function(obs, pred) {
+  r <- rank(pred)
+  n1 <- sum(obs == 1)
+  n0 <- sum(obs == 0)
+  (sum(r[obs == 1]) - n1 * (n1 + 1) / 2) / (n1 * n0)
+}
+
+test_data <- split_data %>% filter(split == "test")
+
+boot_results <- map_dfr(seq_len(ncol(bootstrap_ids)), function(b) {
+  boot_data <- train_data[bootstrap_ids[, b], ]
+
+  # Block-stratified CV: hold out each fold in turn
+  cv_auc <- map_dbl(seq_len(folds), function(k) {
+    fit <- glm(presence ~ latitude + longitude, family = binomial,
+               data = filter(boot_data, fold != k))
+    held_out <- filter(boot_data, fold == k)
+    auc(held_out$presence, predict(fit, held_out, type = "response"))
+  })
+
+  # Refit on the full replicate and score on the test set
+  fit <- glm(presence ~ latitude + longitude, family = binomial,
+             data = boot_data)
+  tibble(
+    replicate = b,
+    cv_auc = mean(cv_auc),
+    test_auc = auc(test_data$presence,
+                   predict(fit, test_data, type = "response")),
+    latitude_coef = coef(fit)[["latitude"]]
+  )
+})
+
+cat("\n== Step 5: bootstrap model results ==\n")
+boot_results %>%
+  tidyr::pivot_longer(-replicate, names_to = "metric") %>%
+  group_by(metric) %>%
+  summarise(mean = mean(value), sd = sd(value))
