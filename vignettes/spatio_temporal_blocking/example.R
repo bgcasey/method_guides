@@ -10,7 +10,6 @@ library(rnaturalearth)
 library(MetBrewer)
 library(utilR) # theme_science_map()
 
-source("R/sample_blocks_binomial.R")
 source("R/stratified_split.R")
 source("R/assign_spatial_cv_folds.R")
 source("R/assign_bootstrap_ids_matrix.R")
@@ -132,46 +131,27 @@ p2 <- ggplot(st_counts) +
   )
 ggsave("figures/spatio_temporal_blocks.png", p2, width = 9, height = 8, dpi = 150)
 
-# 2. Subsample absences within blocks ----
-model_data <- data %>%
-  select(presence, spatio_temporal_block, longitude, latitude, year)
-
-sampled <- sample_blocks_binomial(
-  model_data,
-  block_column = "spatio_temporal_block",
-  response_column = "presence",
-  ratio = 10,
-  min_absences = 2
-)
-
-cat("\n== Step 2: before and after absence subsampling ==\n")
-bind_rows(
-  model_data %>% mutate(stage = "before"),
-  sampled %>% mutate(stage = "after")
-) %>%
-  group_by(stage) %>%
-  summarise(
-    n_blocks = n_distinct(spatio_temporal_block),
-    detections = sum(presence == 1),
-    absences = sum(presence == 0),
-    .groups = "drop"
-  ) %>%
-  arrange(desc(stage)) %>%
-  print()
-
-# 3. Split training and test data by block ----
+# 2. Split training and test data by block ----
 split_data <- stratified_split(
-  data = sampled,
+  data = data,
   block_column = "spatio_temporal_block",
   class_column = "presence",
   train_frac = 0.75
 )
-cat("\n== Step 3: split by class ==\n")
+cat("\n== Step 2: split by class ==\n")
+split_data %>%
+  filter(spatio_temporal_block %in% c("block_14", "block_102", "block_171")) %>%
+  group_by(spatio_temporal_block, presence, split) %>%
+  slice_head(n = 1) %>%
+  ungroup() %>%
+  arrange(temporal_block, presence, split) %>%
+  select(spatio_temporal_block, spatial_block, temporal_block, presence, split) %>%
+  print()
 print(table(split = split_data$split, presence = split_data$presence))
 
 train_data <- split_data %>% filter(split == "train") %>% select(-split)
 
-# 4. Choose the number of folds and assign them ----
+# 3. Choose the number of folds and assign them ----
 folds <- choose_folds_min_detections(
   data = train_data,
   block_column = "spatio_temporal_block",
@@ -179,7 +159,7 @@ folds <- choose_folds_min_detections(
   min_detections = 25,
   max_folds = 5
 )
-cat("\n== Step 4: folds chosen ==\n")
+cat("\n== Step 3: folds chosen ==\n")
 print(folds)
 
 train_data <- assign_spatial_cv_folds(
@@ -189,7 +169,7 @@ train_data <- assign_spatial_cv_folds(
   n_folds = folds
 )
 
-cat("\n== Step 4: detections and absences per fold ==\n")
+cat("\n== Step 3: detections and absences per fold ==\n")
 train_data %>%
   group_by(fold) %>%
   summarise(
@@ -200,7 +180,7 @@ train_data %>%
   ) %>%
   print()
 
-cat("\n== Step 4: folds represented per block ==\n")
+cat("\n== Step 3: folds represented per block ==\n")
 train_data %>%
   group_by(spatio_temporal_block) %>%
   summarise(n_folds_in_block = n_distinct(fold), n = n(), .groups = "drop") %>%
@@ -208,7 +188,7 @@ train_data %>%
   count(n_folds_in_block, name = "n_blocks") %>%
   print()
 
-# 5. Draw stratified bootstrap resamples ----
+# 4. Draw stratified bootstrap resamples ----
 bootstrap_ids <- assign_bootstrap_ids_m(
   data = train_data,
   block_column = "spatio_temporal_block",
@@ -219,7 +199,7 @@ bootstrap_ids <- assign_bootstrap_ids_m(
   replace = TRUE,
   progress = FALSE
 )
-cat("\n== Step 5: bootstrap index matrix ==\n")
+cat("\n== Step 4: bootstrap index matrix ==\n")
 print(dim(bootstrap_ids))
 cat("Unique rows in replicate 1:",
     length(unique(bootstrap_ids[, 1])), "of", nrow(train_data), "\n")
