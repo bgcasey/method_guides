@@ -1,23 +1,15 @@
----
-title: Spatio-temporal stratification of survey locations method guide
-date: 2026-11-15
-description: Assigns survey locations to hexagonal spatio-temporal blocks and uses them to stratify training–test splits, cross-validation folds, and bootstrap resamples for presence–absence models.
-tags:
-  - methods
-type: method_guide
----
-
 # Spatio-temporal stratification of survey locations
 
 ## Overview
 
-Species survey data are rarely spread evenly in space or time. Effort concentrates near roads, in particular regions, and in recent years, and detections of a given species often come from a small part of the study area. Unstratified resampling of such data can produce training, validation, and bootstrap sets that over-represent well-surveyed places and periods. This method assigns every survey location to a spatio-temporal block (an equal-area hexagonal cell crossed with a quantile-based year bin) and uses those blocks as the stratification unit at each resampling stage of a presence–absence modelling workflow.
+Species survey data are rarely spread evenly in space or time. E.g. effort may concentrate near roads, in particular regions, and in recent years, and detections of a given species often come from a small part of the study area. Unstratified resampling of such data can produce training, validation, and bootstrap sets that over-represent well-surveyed places and periods. Here we describe methods to address these problems by spatially stratifying data. The method assigns every survey location to a spatio-temporal block (an equal-area hexagonal cell crossed with a quantile-based year bin) and uses those blocks as the stratification unit at each resampling stage of a presence–absence modelling workflow.
 
-The blocks stratify the training–test split, the cross-validation (CV) folds, and the bootstrap resamples, so that each set draws from the same blocks in the same class proportions. The method assumes presence–absence data, where every survey location records whether the species was detected. The folds are block-stratified rather than block-independent, which matters for how CV error should be read (see Drawbacks and limitations).
+The blocks stratify the training–test split, the cross-validation (CV) folds, and the bootstrap resamples. Each is drawn within every combination of block and response class (detection or absence), so every subset keeps roughly the same mix of detections and absences from each block as the full data. The method assumes presence–absence data, where every survey location records whether the species was detected. The folds are block-stratified rather than block-independent, which matters for how CV error should be read (see Drawbacks and limitations).
 
-| Inputs | Outputs | Languages and platforms | Run time |
-|---|---|---|---|
-| Presence–absence survey locations with longitude, latitude, year, and a 0/1 response | Block labels per location, a training–test split, CV fold IDs, and a bootstrap index matrix | R | A few seconds for the 10,000-location example |
+| Inputs                                                                               | Outputs                                                                                     | Languages and platforms |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- | ----------------------- |
+| Presence–absence survey locations with longitude, latitude, year, and a 0/1 response | Block labels per location, a training–test split, CV fold IDs, and a bootstrap index matrix | R                       |
+
 
 ## Workflow at a glance
 
@@ -100,7 +92,7 @@ The example was run with R 4.5.0 and the packages below.
 
 `rnaturalearthhires` and `utilR` are not on CRAN. Install them from GitHub (`remotes::install_github("ropensci/rnaturalearthhires")` and `remotes::install_github("bgcasey/utilR")`).
 
-The method needs presence–absence survey data with one row per location–visit and columns for longitude and latitude (WGS84), year, and a 0/1 response. The example simulates these. The code chunks below run in order in a single R session, and the function definitions in each step must be run before the calls that follow them. The maps are written to a `figures/` folder in the working directory. The complete script is in `example.R`.
+The method needs presence–absence survey data with one row per location–visit and columns for longitude and latitude (WGS84), year, and a 0/1 response. The below functions take the response through `class_column`, and each value (detection or absence) is treated as a class when stratifying. The example simulates the survey data. The code chunks below run in order in a single R session, and the function definitions in each step must be run before the calls that follow them. The maps are written to a `figures/` folder in the working directory. The complete script is in `example.R`.
 
 ### Simulated survey data
 
@@ -137,7 +129,7 @@ data <- tibble(
 ) %>%
   mutate(
     p_det    = plogis(-3.5 + 0.35 * (60 - latitude) / 2 +
-                        0.2 * (longitude + 120) / 2),
+                        0.2 * (longitude + 120) / 2), # probability of detection
     presence = rbinom(n, 1, p_det)  # 1 = detected, 0 = not detected
   ) %>%
   select(-p_det)
@@ -146,7 +138,7 @@ data <- tibble(
 ## Step-by-step
 
 ### Step 1: Build spatial and temporal blocks
-
+ 
 Spatial blocks come from a global discrete grid of hexagons rather than a projected rectangular grid, so cells have approximately equal area across large extents. `dgconstruct()` picks the grid resolution whose cell-centre spacing is closest to the requested 150 km, and `dgGEO_to_SEQNUM()` returns the ID of the cell that contains each location. Temporal blocks bin survey years at the 20th, 40th, 60th, and 80th percentiles, so each bin holds roughly one fifth of the observations rather than one fifth of the years. The spatio-temporal block is the observed combination of the two, renumbered `block_1`, `block_2`, and so on.
 
 ```r
@@ -209,8 +201,6 @@ print(table(data$temporal_block))
 ```
 
 ```text
-Resolution: 7, Area (km^2): 23322.6164482894, Spacing (km): 150.830671483152, CLS (km): 172.324490896129
-
 # A tibble: 1 × 4
   n_obs n_detections n_spatial_blocks n_spatio_temporal_blocks
   <int>        <int>            <int>                    <int>
@@ -285,7 +275,7 @@ Hexagons on the edge of the province hold few locations because only part of eac
 
 ### Step 2: Split training and test data by block
 
-`stratified_split()` groups the data by block × class and sends `round(train_frac * n)` randomly chosen rows of each group to training and the rest to test. Every block therefore contributes detections and absences to both sets where group sizes allow.
+`stratified_split()` groups the data by block × class (for example, the detections in `block_10` form one group and the absences in `block_10` another) and sends `round(train_frac * n)` randomly chosen rows of each group to training and the rest to test. Every block therefore contributes detections and absences to both sets where group sizes allow.
 
 Function definition:
 
@@ -362,7 +352,10 @@ train_data <- split_data %>% filter(split == "train") %>% select(-split)
   train 6474 1028
 ```
 
-`stratified_split()` keeps every input column and adds `split`. The block-level counts show each block × class group divided at about 3:1 between training and test (`block_100`: 33 and 11 absences, 4 and 2 detections). Both classes split at close to 75% overall (1,028 of 1,362 detections and 6,474 of 8,638 absences). Rounding is applied per group, so groups of 1 or 2 rows always go to training: the 2 detections in `block_10` are both in the training set. With sparse detections, the realized training fraction for detections rises above the nominal value and blocks with one or two detections never reach the test set.
+`stratified_split()` returns the input data with one new column, `split`, that marks each row as `train` or `test`. In the counts above, `n` is the number of survey locations in each block, class, and split. Each block × class group is divided roughly 3:1; for example, the 44 absences in `block_100` split 33 to training and 11 to test, and its 6 detections split 4 to 2. Across all blocks, about 75% of each class goes to training: 1,028 of 1,362 detections and 6,474 of 8,638 absences.
+
+The training count is rounded separately for each group, so a group with only 1 or 2 rows always goes entirely to training. That is why `block_10` has no detections in the test set: both of its detections are in training. When detections are sparse, many blocks have only one or two of them, so slightly more than 75% of detections end up in training. In this example the figure is 75.5%, and those blocks are never represented among the test detections.
+
 
 **Decision point.** The training fraction (D3).
 
@@ -452,7 +445,7 @@ choose_folds_min_detections <- function(
 }
 ```
 
-`assign_spatial_cv_folds()` then assigns folds within each block × class group by shuffling the sequence `1, 2, …, k, 1, 2, …` cut to the group's length.
+`assign_spatial_cv_folds()` then assigns folds within each block × class group by shuffling the sequence `1, 2, …, k, 1, 2, …`, cut to the group's length, where `k` is the number of folds (`n_folds`, 5 in this example).
 
 Function definition:
 
@@ -466,6 +459,8 @@ assign_spatial_cv_folds <- function(
   data %>%
     # One group per block x class
     dplyr::group_by(
+      # sym() turns the column-name string into a symbol; !! injects it so
+      # group_by() groups by that column rather than by the string itself.
       !!sym(block_column),
       !!sym(class_column)
     ) %>%
@@ -538,14 +533,8 @@ train_data %>%
 4     4        168     1262      186
 5     5        120     1221      181
 
-# A tibble: 2 × 2
-  n_folds_in_block n_blocks
-             <int>    <int>
-1                4        5
-2                5      181
-```
 
-Five folds clear the 25-detection minimum, and 181 of the 186 blocks with at least 5 training rows appear in all 5 folds. Detections decline from 284 in fold 1 to 120 in fold 5. When a group has fewer rows than `k`, the shortened sequence holds only the lowest fold numbers, so blocks with few detections send them to fold 1 first. The fold vector can be passed to any CV routine that accepts predefined folds (for example, `fold.vector` in `dismo::gbm.step()`).
+The `fold` column can be used with any modelling function that accepts predefined CV folds, for example the `fold.vector` argument of `dismo::gbm.step()`.
 
 **Decision point.** The minimum detections per fold and the maximum number of folds (D4).
 
