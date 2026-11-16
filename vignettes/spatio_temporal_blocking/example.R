@@ -211,6 +211,57 @@ train_data %>%
   count(n_folds_in_block, name = "n_blocks") %>%
   print()
 
+# Figure 3: share of each hex cell's training rows held out in fold 1,
+# for the guide's folds and for leave-block-out folds
+set.seed(7)
+
+# Leave-block-out alternative: give each whole hex cell a single fold
+# (the same shuffled 1, 2, ..., k sequence, applied to cells instead of rows)
+cell_folds <- tibble(spatial_block = unique(train_data$spatial_block)) %>%
+  mutate(lbo_fold = sample(rep_len(seq_len(folds), n())))
+
+# Share of each cell's training rows that fall in fold 1 under each design
+held_out <- train_data %>%
+  left_join(cell_folds, by = "spatial_block") %>%
+  group_by(spatial_block) %>%
+  summarise(
+    `Block-stratified (this guide)` = mean(fold == 1),
+    `Leave-block-out` = mean(lbo_fold == 1),
+    .groups = "drop"
+  ) %>%
+  tidyr::pivot_longer(-spatial_block, names_to = "design",
+                      values_to = "share_held_out")
+
+# Attach the shares to the hex polygons from Step 1
+cv_map <- block_cells %>%
+  inner_join(held_out, by = c("seqnum" = "spatial_block"))
+
+p3 <- ggplot(cv_map) +
+  geom_sf(aes(fill = share_held_out), colour = "white", linewidth = 0.3) +
+  geom_sf(data = alberta_lcc, fill = NA, colour = "black", linewidth = 0.5) +
+  facet_wrap(~design) +
+  scale_fill_gradientn(
+    colours = met.brewer("Hokusai3", type = "continuous", direction = -1),
+    limits = c(0, 1),
+    labels = function(x) paste0(x * 100, "%")
+  ) +
+  scale_x_continuous(breaks = c(-120, -115, -110)) +
+  labs(x = NULL, y = NULL, fill = "Training rows held out in fold 1") +
+  theme_science_map() +
+  theme(
+    strip.text = element_text(face = "bold"),
+    legend.position = "bottom",
+    legend.key.width = unit(1.5, "cm")
+  )
+ggsave("figures/cv_fold_designs.png", p3, width = 9, height = 6, dpi = 150)
+
+# Check: range of the held-out share across cells under each design
+cv_map %>%
+  st_drop_geometry() %>%
+  group_by(design) %>%
+  summarise(min = min(share_held_out), median = median(share_held_out),
+            max = max(share_held_out))
+
 # 4. Draw stratified bootstrap resamples ----
 cat("
 == Step 4: bootstrap index matrix ==

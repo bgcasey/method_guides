@@ -533,8 +533,85 @@ train_data %>%
 4     4        168     1262      186
 5     5        120     1221      181
 
+# A tibble: 2 × 2
+  n_folds_in_block n_blocks
+             <int>    <int>
+1                4        5
+2                5      181
+```
+
+With 5 folds, every fold has at least 25 detections (the smallest, fold 5, has 120), so the function keeps the maximum of 5. Most blocks are spread across all folds: of the 186 blocks with at least 5 training rows, 181 appear in every fold.
+
+Detections are not spread evenly, though. Fold 1 has 284 and fold 5 has 120. This happens because a group with fewer rows than `k` only gets the lowest fold numbers. A block with 1 detection always puts it in fold 1, and a block with 2 detections uses folds 1 and 2. Across many such blocks, the low-numbered folds collect more detections.
 
 The `fold` column can be used with any modelling function that accepts predefined CV folds, for example the `fold.vector` argument of `dismo::gbm.step()`.
+
+Because the folds are assigned within blocks, every block contributes rows to every fold, so held-out rows always share hexagons with training rows. Figure 3 contrasts this with leave-block-out CV, where each whole hexagon is assigned to one fold and held out together. The map code reuses `block_cells` and `alberta_lcc` from Step 1.
+
+```r
+# Figure 3: share of each hex cell's training rows held out in fold 1,
+# for the guide's folds and for leave-block-out folds
+set.seed(7)
+
+# Leave-block-out alternative: give each whole hex cell a single fold
+# (the same shuffled 1, 2, ..., k sequence, applied to cells instead of rows)
+cell_folds <- tibble(spatial_block = unique(train_data$spatial_block)) %>%
+  mutate(lbo_fold = sample(rep_len(seq_len(folds), n())))
+
+# Share of each cell's training rows that fall in fold 1 under each design
+held_out <- train_data %>%
+  left_join(cell_folds, by = "spatial_block") %>%
+  group_by(spatial_block) %>%
+  summarise(
+    `Block-stratified (this guide)` = mean(fold == 1),
+    `Leave-block-out` = mean(lbo_fold == 1),
+    .groups = "drop"
+  ) %>%
+  tidyr::pivot_longer(-spatial_block, names_to = "design",
+                      values_to = "share_held_out")
+
+# Attach the shares to the hex polygons from Step 1
+cv_map <- block_cells %>%
+  inner_join(held_out, by = c("seqnum" = "spatial_block"))
+
+p3 <- ggplot(cv_map) +
+  geom_sf(aes(fill = share_held_out), colour = "white", linewidth = 0.3) +
+  geom_sf(data = alberta_lcc, fill = NA, colour = "black", linewidth = 0.5) +
+  facet_wrap(~design) +
+  scale_fill_gradientn(
+    colours = met.brewer("Hokusai3", type = "continuous", direction = -1),
+    limits = c(0, 1),
+    labels = function(x) paste0(x * 100, "%")
+  ) +
+  scale_x_continuous(breaks = c(-120, -115, -110)) +
+  labs(x = NULL, y = NULL, fill = "Training rows held out in fold 1") +
+  theme_science_map() +
+  theme(
+    strip.text = element_text(face = "bold"),
+    legend.position = "bottom",
+    legend.key.width = unit(1.5, "cm")
+  )
+ggsave("figures/cv_fold_designs.png", p3, width = 9, height = 6, dpi = 150)
+
+# Check: range of the held-out share across cells under each design
+cv_map %>%
+  st_drop_geometry() %>%
+  group_by(design) %>%
+  summarise(min = min(share_held_out), median = median(share_held_out),
+            max = max(share_held_out))
+```
+
+```text
+# A tibble: 2 × 4
+  design                          min median   max
+  <chr>                         <dbl>  <dbl> <dbl>
+1 Block-stratified (this guide) 0.209  0.218     1
+2 Leave-block-out               0      0         1
+```
+
+![Figure 3. Share of each hexagon's training rows held out in fold 1 under the guide's block-stratified folds (left) and under leave-block-out folds (right), with the Alberta boundary in black.](figures/cv_fold_designs.png)
+
+Under the guide's design, most hexagons hold out about 22% of their rows (slightly more than one fifth, because leftover rows in each group go to fold 1 first), so training and validation rows come from the same places. A few small edge hexagons hold out a larger share because their only rows fall in fold 1. Under leave-block-out CV, each hexagon is either entirely held out (100%) or entirely used for training (0%), so validation rows are spatially separate from training rows. The leave-block-out panel is for comparison only; the rest of the guide uses the block-stratified folds.
 
 **Decision point.** The minimum detections per fold and the maximum number of folds (D4).
 
@@ -752,7 +829,7 @@ Mean CV AUC (0.690) is slightly higher than test AUC (0.676). Because folds and 
 
 ## Drawbacks and limitations
 
-- The CV is block-stratified, not spatially independent. Folds and the test set draw rows from the same blocks, so training and validation locations can sit in the same hexagon and year bin. CV and test error are likely optimistic for prediction to new areas or periods `[citation needed]`. When transferability matters, assign whole blocks to folds (block hold-out or leave-block-out CV, for example with `blockCV`) and choose block size from residual spatial autocorrelation.
+- The CV is block-stratified, not spatially independent (Figure 3). Folds and the test set draw rows from the same blocks, so training and validation locations can sit in the same hexagon and year bin. CV and test error are likely optimistic for prediction to new areas or periods `[citation needed]`. When transferability matters, assign whole blocks to folds (block hold-out or leave-block-out CV, for example with `blockCV`) and choose block size from residual spatial autocorrelation.
 - Detections pile into the low-numbered folds. Groups smaller than `k` only use the lowest fold IDs, so fold 1 collects the detections from sparse blocks (284 against 120 across 5 folds in the example). Fold-level statistics are therefore not directly comparable. Starting each group's fold sequence at a random offset would spread these evenly.
 - Small groups never reach the test set. Per-group rounding sends blocks with one or two detections entirely to training, so the test set over-represents dense blocks.
 - The method assumes true presence–absence data. With presence-only data, randomly generated pseudo-absences should also be stratified by block, for example by drawing them in proportion to detections or survey effort within each spatio-temporal block. Otherwise pseudo-absences spread evenly across space and time, while detections cluster in well-surveyed blocks. This confounds survey effort with habitat, and the class proportions in the splits, folds, and bootstrap resamples then differ by block for reasons unrelated to the species.
