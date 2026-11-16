@@ -1,5 +1,9 @@
 # Method Guides
 
+![In Development](https://img.shields.io/badge/Status-In%20Development-yellow)
+![Lifecycle](https://img.shields.io/badge/Lifecycle-Experimental-orange)
+![Languages](https://img.shields.io/badge/Languages-R-blue)
+
 Method guides that reconstruct analysis workflows from project code. Each guide walks through the steps, decision points, and limitations of one method, and runs a reproducible example on simulated data.
 
 ## Vignettes
