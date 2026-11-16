@@ -32,6 +32,10 @@ nav:
   - Vignettes:
       - Spatio-temporal stratification: spatio_temporal_blocking/README.md
 
+plugins:
+  - search
+  - include-markdown
+
 markdown_extensions:
   - tables
   - attr_list
