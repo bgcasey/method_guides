@@ -227,7 +227,7 @@ print(table(data$temporal_block))
 
 `dgconstruct()` selects resolution 7, with cells of about 23,300 km² spaced 150.8 km apart. The 10,000 locations fall into 40 hexagons and 197 spatio-temporal blocks. Survey years are simulated uniformly, so the quantile breaks fall on 5-year intervals and each bin holds 1,960 to 2,061 locations. With real data, where effort grows over time, the bins narrow in well-surveyed periods.
 
-To check the blocks, we convert the occupied cells to polygons and map the number of locations per block (Figures 1 and 2).
+To check the blocks, we convert the occupied cells to polygons and map the number of locations per block ([Figures 1](#figure-1) and [2](#figure-2)).
 
 ```r
 dir.create("figures", showWarnings = FALSE)
@@ -278,7 +278,11 @@ p2 <- ggplot(st_counts) +
 ggsave("figures/spatio_temporal_blocks.png", p2, width = 9, height = 8, dpi = 150)
 ```
 
+<a id="figure-1"></a>
+
 ![Figure 1. Spatial blocks (150-km hexagons) shaded by the number of simulated survey locations per block, with the Alberta boundary in black.](figures/spatial_blocks.png)
+
+<a id="figure-2"></a>
 
 ![Figure 2. Spatio-temporal blocks, one panel per quantile-based year bin, shaded by the number of simulated survey locations per block, with the Alberta boundary in black.](figures/spatio_temporal_blocks.png)
 
@@ -770,7 +774,7 @@ boot_results %>%
 | D5  | Bootstrap design   | Number of replicates; with or without replacement; resample size                                            |
 
 ## Drawbacks and limitations
-- The CV is block-stratified, not spatially independent (Figure 3). Folds and the test set draw rows from the same blocks, so training and validation locations can sit in the same hexagon and year bin. CV and test error are likely optimistic for prediction to new areas or periods., Figure 3 contrasts this with leave-block-out CV, where each whole hexagon is assigned to one fold and held out together.
+- The CV is block-stratified, not spatially independent ([Figure 3](#figure-3)). Folds and the test set draw rows from the same blocks, so training and validation locations can sit in the same hexagon and year bin. CV and test error are likely optimistic for prediction to new areas or periods., [Figure 3](#figure-3) contrasts this with leave-block-out CV, where each whole hexagon is assigned to one fold and held out together.
 
 <!--
 ```r
@@ -829,11 +833,13 @@ cv_map %>%
 
 
 
+<a id="figure-3"></a>
+
 ![Figure 3. Share of each hexagon's training rows held out in fold 1 under the guide's block-stratified folds (left) and under leave-block-out folds (right), with the Alberta boundary in black.](figures/cv_fold_designs.png)
 
 
 
-- Hexagon positions are fixed by the global grid. Cells straddle ecological and administrative boundaries, and cells on the edge of the study area are only partly sampled, so they form small blocks (Figure 1).
+- Hexagon positions are fixed by the global grid. Cells straddle ecological and administrative boundaries, and cells on the edge of the study area are only partly sampled, so they form small blocks ([Figure 1](#figure-1)).
 - Year breaks depend on the data. Quantile breaks shift when data are added.
 - The method assumes true presence–absence data. With presence-only data, randomly generated pseudo-absences should also be stratified by block, for example by drawing them in proportion to detections or survey effort within each spatio-temporal block. 
 
