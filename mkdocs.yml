@@ -1,0 +1,50 @@
+site_name: Method guides
+site_description: Method guides (vignettes) that reconstruct analysis workflows from project code.
+site_url: https://bgcasey.github.io/method_guides/
+repo_url: https://github.com/bgcasey/method_guides
+repo_name: bgcasey/method_guides
+edit_uri: edit/main/vignettes/
+
+docs_dir: vignettes
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - toc.follow
+    - search.highlight
+    - content.code.copy
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+nav:
+  - Home: index.md
+  - Vignettes:
+      - Spatio-temporal stratification: spatio_temporal_blocking/spatio_temporal_blocking.md
+
+markdown_extensions:
+  - tables
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+validation:
+  links:
+    anchors: warn
