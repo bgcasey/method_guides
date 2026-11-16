@@ -1,5 +1,20 @@
 # Spatio-temporal stratification of survey locations
 
+## Contents
+
+- [Overview](#overview)
+- [Workflow at a glance](#workflow-at-a-glance)
+- [Requirements](#requirements)
+  - [Simulated survey data](#simulated-survey-data)
+- [Step-by-step](#step-by-step)
+  - [Step 1: Build spatial and temporal blocks](#step-1-build-spatial-and-temporal-blocks)
+  - [Step 2: Split training and test data by block](#step-2-split-training-and-test-data-by-block)
+  - [Step 3: Choose the number of folds and assign them](#step-3-choose-the-number-of-folds-and-assign-them)
+  - [Step 4: Draw stratified bootstrap resamples](#step-4-draw-stratified-bootstrap-resamples)
+  - [Step 5: Use the folds and bootstrap resamples in a model](#step-5-use-the-folds-and-bootstrap-resamples-in-a-model)
+- [Key decision points](#key-decision-points)
+- [Drawbacks and limitations](#drawbacks-and-limitations)
+
 ## Overview
 
 Species survey data are rarely spread evenly in space or time. E.g. effort may concentrate near roads, in particular regions, and in recent years, and detections of a given species often come from a small part of the study area. Unstratified resampling of such data can produce training, validation, and bootstrap sets that over-represent well-surveyed places and periods. Here we describe methods to address these problems by spatially stratifying data. The method assigns every survey location to a spatio-temporal block (an equal-area hexagonal cell crossed with a quantile-based year bin) and uses those blocks as the stratification unit at each resampling stage of a presence–absence modelling workflow.
