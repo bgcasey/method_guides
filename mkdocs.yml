@@ -30,7 +30,7 @@ theme:
 nav:
   - Home: index.md
   - Vignettes:
-      - Spatio-temporal stratification: spatio_temporal_blocking/spatio_temporal_blocking.md
+      - Spatio-temporal stratification: spatio_temporal_blocking/README.md
 
 markdown_extensions:
   - tables
