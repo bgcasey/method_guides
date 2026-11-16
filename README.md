@@ -1,4 +1,4 @@
-# method_guides
+# Method Guides
 
 Method guides that reconstruct analysis workflows from project code. Each guide walks through the steps, decision points, and limitations of one method, and runs a reproducible example on simulated data.
 
