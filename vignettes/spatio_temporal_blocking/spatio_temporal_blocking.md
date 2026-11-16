@@ -107,7 +107,7 @@ The example was run with R 4.5.0 and the packages below.
 
 `rnaturalearthhires` and `utilR` are not on CRAN. Install them from GitHub (`remotes::install_github("ropensci/rnaturalearthhires")` and `remotes::install_github("bgcasey/utilR")`).
 
-The method needs presence–absence survey data with one row per location–visit and columns for longitude and latitude (WGS84), year, and a 0/1 response. The below functions take the response through `class_column`, and each value (detection or absence) is treated as a class when stratifying. The example simulates the survey data. The code chunks below run in order in a single R session, and the function definitions in each step must be run before the calls that follow them. The maps are written to a `figures/` folder in the working directory. The complete script is in `example.R`.
+The method needs presence–absence survey data with one row per location–visit and columns for longitude and latitude (WGS84), year, and a 0/1 response. The below functions take the response through `class_column`, and each value (detection or absence) is treated as a class when stratifying. The example simulates the survey data. The code chunks below run in order in a single R session, and the function definitions in each step must be run before the calls that follow them. The maps are written to a `figures/` folder in the working directory. The complete script is in [`example.R`](example.R).
 
 ### Simulated survey data
 
