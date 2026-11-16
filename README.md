@@ -6,7 +6,7 @@ Method guides that reconstruct analysis workflows from project code. Each guide 
 
 | Vignette | Method | Source project |
 |---|---|---|
-| [Spatio-temporal stratification of survey locations](vignettes/spatio_temporal_blocking/spatio_temporal_blocking.md) | Hexagonal spatio-temporal blocks and block-stratified training–test splits, CV folds, and bootstrap resamples for presence–absence models | Adapted from `invasive_species_indicator` |
+| [Spatio-temporal stratification of survey locations](vignettes/spatio_temporal_blocking/spatio_temporal_blocking.md) | Hexagonal spatio-temporal blocks and block-stratified training–test splits, CV folds, and bootstrap resamples for presence–absence models | Adapted from [`invasive_species_indicator`](https://github.com/bgcasey/invasive_species_indicator) |
 
 ## Layout
 
