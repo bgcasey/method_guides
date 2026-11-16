@@ -284,7 +284,7 @@ ggsave("figures/spatio_temporal_blocks.png", p2, width = 9, height = 8, dpi = 15
 
 Hexagons on the edge of the province hold few locations because only part of each cell lies within Alberta. These sparse edge blocks recur in later steps.
 
-**Decision point.** Hexagon spacing (D1) and the number and type of year bins (D2). See Key decision points.
+**Decision point.** Hexagon spacing ([D1](#key-decision-points)) and the number and type of year bins ([D2](#key-decision-points)).
 
 **Outputs.** `spatial_block`, `temporal_block`, and `spatio_temporal_block` columns on the survey data, and two block maps.
 
@@ -372,7 +372,7 @@ train_data <- split_data %>% filter(split == "train") %>% select(-split)
 The training count is rounded separately for each group, so a group with only 1 or 2 rows always goes entirely to training. That is why `block_10` has no detections in the test set: both of its detections are in training. When detections are sparse, many blocks have only one or two of them, so slightly more than 75% of detections end up in training. In this example the figure is 75.5%, and those blocks are never represented among the test detections.
 
 
-**Decision point.** The training fraction (D3).
+**Decision point.** The training fraction ([D3](#key-decision-points)).
 
 **Outputs.** Training and test datasets.
 
@@ -546,7 +546,7 @@ train_data %>%
 The `fold` column can be used with any modelling function that accepts predefined CV folds, for example the `fold.vector` argument of `dismo::gbm.step()`.
 
 
-**Decision point.** The minimum detections per fold and the maximum number of folds (D4).
+**Decision point.** The minimum detections per fold and the maximum number of folds ([D4](#key-decision-points)).
 
 **Outputs.** A `fold` column on the training data.
 
@@ -682,7 +682,7 @@ Unique rows in replicate 1: 4847 of 7502
 Replicates identical to replicate 1: 1 of 50
 ```
 
-**Decision point.** The number of replicates, sampling with replacement, and the resample size (D5).
+**Decision point.** The number of replicates, sampling with replacement, and the resample size ([D5](#key-decision-points)).
 
 **Outputs.** An integer matrix of row indices (rows × replicates).
 
