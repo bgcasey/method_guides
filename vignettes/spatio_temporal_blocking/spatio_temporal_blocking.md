@@ -282,9 +282,13 @@ ggsave("figures/spatio_temporal_blocks.png", p2, width = 9, height = 8, dpi = 15
 
 ![Figure 1. Spatial blocks (150-km hexagons) shaded by the number of simulated survey locations per block, with the Alberta boundary in black.](figures/spatial_blocks.png)
 
+*Figure 1. Spatial blocks (150-km hexagons) shaded by number of survey locations.*
+
 <a id="figure-2"></a>
 
 ![Figure 2. Spatio-temporal blocks, one panel per quantile-based year bin, shaded by the number of simulated survey locations per block, with the Alberta boundary in black.](figures/spatio_temporal_blocks.png)
+
+*Figure 2. Spatio-temporal blocks, one panel per year bin, shaded by number of survey locations.*
 
 Hexagons on the edge of the province hold few locations because only part of each cell lies within Alberta. These sparse edge blocks recur in later steps.
 
@@ -836,6 +840,8 @@ cv_map %>%
 <a id="figure-3"></a>
 
 ![Figure 3. Share of each hexagon's training rows held out in fold 1 under the guide's block-stratified folds (left) and under leave-block-out folds (right), with the Alberta boundary in black.](figures/cv_fold_designs.png)
+
+*Figure 3. Share of each hexagon's training rows held out in fold 1: block-stratified folds (left) and leave-block-out folds (right).*
 
 
 
