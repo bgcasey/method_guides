@@ -10,7 +10,7 @@ Method guides that reconstruct analysis workflows from project code. Each guide 
 
 | Vignette | Method | Source project |
 |---|---|---|
-| [Spatio-temporal stratification of survey locations](vignettes/spatio_temporal_blocking/spatio_temporal_blocking.md) | Hexagonal spatio-temporal blocks and block-stratified training–test splits, CV folds, and bootstrap resamples for presence–absence models | Adapted from [`invasive_species_indicator`](https://github.com/bgcasey/invasive_species_indicator) |
+| [Spatio-temporal stratification of survey locations](vignettes/spatio_temporal_blocking/README.md) | Hexagonal spatio-temporal blocks and block-stratified training–test splits, CV folds, and bootstrap resamples for presence–absence models | Adapted from [`invasive_species_indicator`](https://github.com/bgcasey/invasive_species_indicator) |
 
 ## Layout
 
@@ -18,7 +18,7 @@ Each vignette lives in its own folder under `vignettes/`:
 
 ```
 vignettes/<name>/
-├── <name>.md     # the guide
+├── README.md     # the guide
 ├── example.R     # simulated-data example that reproduces the outputs in the guide
 ├── R/            # helper functions copied from the source project
 └── figures/      # figures referenced by the guide
